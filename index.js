@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, REST, Routes } = require('discord.js');
+const { createSignup, getSignup } = require("./signupStore");
+const { updateThreadSheet } = require("./thread");
 
 const client = new Client({
     intents: [
@@ -265,73 +267,79 @@ client.once('clientReady', () => {
 // Handle slash commands
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isCommand() && interaction.commandName === 'raid') {
-        const title = interaction.options.getString('title');
-        const date = interaction.options.getString('date');
-        const description = interaction.options.getString('description') || '';
-        const host = interaction.user.id; // store user ID, not string
+        try {
+            await interaction.deferReply();
 
-        const event = initializeRaidEvent(title, date, description, `<@${host}>`);
-        const embed = createRaidEmbed(event);
-        const selectMenu = createRoleMenu();
-        const row = new ActionRowBuilder().addComponents(selectMenu);
+            const title = interaction.options.getString('title');
+            const date = interaction.options.getString('date');
+            const description = interaction.options.getString('description') || '';
+            const host = interaction.user.id;
 
-        const reply = await interaction.reply({ 
-            embeds: [embed], 
-            components: [row],
-            fetchReply: true
-        });
+            const event = initializeRaidEvent(title, date, description, `<@${host}>`);
+            const embed = createRaidEmbed(event);
+            const selectMenu = createRoleMenu();
+            const row = new ActionRowBuilder().addComponents(selectMenu);
 
-        const thread = await reply.startThread({
-            name: `Raid: ${title}`,
-            autoArchiveDuration: 1440 
-        });
- 
-        const { createSignup } = require("./signupStore");
-        const { updateThreadSheet } = require("./thread");
+            const reply = await interaction.editReply({ 
+                embeds: [embed], 
+                components: [row]
+            });
 
-        const sheetMsg = await thread.send("Loading signup sheet...");
+            const thread = await reply.startThread({
+                name: `Raid: ${title}`,
+                autoArchiveDuration: 1440 
+            });
 
+            const sheetMsg = await thread.send("Loading signup sheet...");
 
-        createSignup(thread.id, sheetMsg.id, host);
+            createSignup(thread.id, sheetMsg.id, host);
 
-        await updateThreadSheet(thread);
+            await updateThreadSheet(thread);
 
-        console.log(`Raid event created: ${event.id} by ${interaction.user.tag}`);
+            console.log(`Raid event created: ${event.id} by ${interaction.user.tag}`);
+        } catch (error) {
+            console.error('Error in /raid command:', error);
+            if (interaction.deferred) {
+                await interaction.editReply({ content: 'An error occurred while creating the raid event.' });
+            } else {
+                await interaction.reply({ content: 'An error occurred while creating the raid event.', flags: 64 });
+            }
+        }
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'role-menu') {
-        const { getSignup } = require("./signupStore");
-        const { updateThreadSheet } = require("./thread");
+        try {
+            const data = getSignup(interaction.message.id); 
+            if (!data) return interaction.reply({ content: 'This raid event is no longer active.', ephemeral: true });
 
-        const data = getSignup(interaction.message.id); 
-        if (!data) return interaction.reply({ content: 'This raid event is no longer active.', ephemeral: true });
+            const selectedRole = interaction.values[0];
+            const userId = interaction.user.id;
 
-        const selectedRole = interaction.values[0];
-        const userId = interaction.user.id;
-
-        if (selectedRole === 'remove') {
-            for (const slot in data.slots) {
-                if (slot !== 'raidlead' && data.slots[slot] === userId) {
-                    data.slots[slot] = null;
+            if (selectedRole === 'remove') {
+                for (const slot in data.slots) {
+                    if (slot !== 'raidlead' && data.slots[slot] === userId) {
+                        data.slots[slot] = null;
+                    }
                 }
-            }
-        } else {
-
-            for (const slot in data.slots) {
-                if (slot !== 'raidlead' && data.slots[slot] === userId) {
-                    data.slots[slot] = null;
+            } else {
+                for (const slot in data.slots) {
+                    if (slot !== 'raidlead' && data.slots[slot] === userId) {
+                        data.slots[slot] = null;
+                    }
                 }
+
+                if (selectedRole !== 'raidlead') data.slots[selectedRole] = userId;
             }
 
-            if (selectedRole !== 'raidlead') data.slots[selectedRole] = userId;
+            const thread = await interaction.channel.threads.fetch(data.threadId || interaction.channel.id);
+            await updateThreadSheet(thread);
+
+            await interaction.reply({ content: 'Your signup has been updated!', ephemeral: true });
+        } catch (error) {
+            console.error('Error in role selection:', error);
+            await interaction.reply({ content: 'An error occurred while updating your role.', flags: 64 }).catch(() => {});
         }
-
-        const thread = await interaction.channel.threads.fetch(data.threadId || interaction.channel.id);
-        await updateThreadSheet(thread);
-
-        await interaction.reply({ content: 'Your signup has been updated!', ephemeral: true });
     }
-
 });
 
 // ========== START BOT ==========

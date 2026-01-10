@@ -1,7 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, REST, Routes } = require('discord.js');
 
-// Initialize Discord Client
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -11,7 +10,6 @@ const client = new Client({
 
 // ========== CONFIGURATION ==========
 
-// Role limits configuration
 const ROLE_LIMITS = {
     mainTank: 1,
     offTank: 1,
@@ -23,7 +21,6 @@ const ROLE_LIMITS = {
     leacher: 1,
 };
 
-// Custom emoji IDs 
 const EMOJIS = {
     mainTank: '1234567890',      
     offTank: '1459441602715189583',     
@@ -37,17 +34,14 @@ const EMOJIS = {
     queue: '📋',
 };
 
-// Store active raid events
 const raidEvents = new Map();
 
 // ========== HELPER FUNCTIONS ==========
 
-// Generate unique event ID
 function generateEventId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
-// Create the raid embed
 function createRaidEmbed(event) {
     const totalSignups = Object.values(event.roles)
         .filter(role => role.name !== 'queue')
@@ -130,7 +124,6 @@ function createRaidEmbed(event) {
         });
 }
 
-// Create the role selection menu
 function createRoleMenu() {
     return new StringSelectMenuBuilder()
         .setCustomId('role-menu')
@@ -179,7 +172,6 @@ function createRoleMenu() {
         );
 }
 
-// Initialize raid event structure
 function initializeRaidEvent(title, date, description, host) {
     return {
         id: generateEventId(),
@@ -203,7 +195,6 @@ function initializeRaidEvent(title, date, description, host) {
     };
 }
 
-// Remove user from all roles
 function removeUserFromAllRoles(event, userId) {
     for (const roleKey in event.roles) {
         event.roles[roleKey].users = event.roles[roleKey].users.filter(u => {
@@ -273,22 +264,18 @@ client.once('clientReady', () => {
 
 // Handle slash commands
 client.on('interactionCreate', async (interaction) => {
-    // Handle /raid command
     if (interaction.isCommand() && interaction.commandName === 'raid') {
         const title = interaction.options.getString('title');
         const date = interaction.options.getString('date');
         const description = interaction.options.getString('description') || '';
         const host = interaction.user.toString();
 
-        // Initialize raid event
         const event = initializeRaidEvent(title, date, description, host);
 
-        // Create embed and menu
         const embed = createRaidEmbed(event);
         const selectMenu = createRoleMenu();
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
-        // Send the raid event message
         await interaction.reply({ 
             embeds: [embed], 
             components: [row]
@@ -296,7 +283,6 @@ client.on('interactionCreate', async (interaction) => {
         
         const reply = await interaction.fetchReply();
 
-        // Store event data
         event.messageId = reply.id;
         event.channelId = interaction.channel.id;
         raidEvents.set(reply.id, event);
@@ -304,7 +290,6 @@ client.on('interactionCreate', async (interaction) => {
         console.log(`Raid event created: ${event.id} by ${interaction.user.tag}`);
     }
 
-    // Handle role selection menu
     if (interaction.isStringSelectMenu() && interaction.customId === 'role-menu') {
         const event = raidEvents.get(interaction.message.id);
         
@@ -320,31 +305,26 @@ client.on('interactionCreate', async (interaction) => {
         const userId = `<@${interaction.user.id}>`;
         let responseMessage = '';
 
-        // Handle role removal
         if (selectedRole === 'remove') {
             removeUserFromAllRoles(event, userId);
             responseMessage = 'You have been removed from all roles.';
         } else {
-            // Remove user from all roles first (one role per person)
             removeUserFromAllRoles(event, userId);
 
-            // Check if role is full
             const role = event.roles[selectedRole];
             if (role.users.length >= role.max) {
-                // Auto-add to queue with role marker
+                // Auto-queue when role is full
                 event.roles.queue.users.push({
                     id: userId,
                     queuedRole: selectedRole
                 });
                 responseMessage = `The **${selectedRole}** role is full. You've been added to the queue as **${selectedRole}**.`;
             } else {
-                // Add user to selected role
                 role.users.push({ id: userId });
                 responseMessage = `You have been added to the **${selectedRole}** role!`;
             }
         }
 
-        // Update the embed
         const updatedEmbed = createRaidEmbed(event);
         const selectMenu = createRoleMenu();
         const row = new ActionRowBuilder().addComponents(selectMenu);
@@ -354,7 +334,6 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [updatedEmbed], 
                 components: [row] 
             });
-            // Send a follow-up message to confirm the action
             await interaction.followUp({ 
                 content: responseMessage, 
                 flags: 64 

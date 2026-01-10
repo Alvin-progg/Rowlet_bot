@@ -18,7 +18,7 @@ const ROLE_LIMITS = {
     stillgaze: 1,
     shadowCaller: 1,
     dps: 3,
-    leacher: 1,
+    leecher: 1,
 };
 
 const EMOJIS = {
@@ -29,7 +29,7 @@ const EMOJIS = {
     stillgaze: '1459441784194203852',       
     shadowCaller: '1459441501032546304',   
     dps: '1459441823763271691',            
-    leacher: '1459441728024219764',         
+    leecher: '1459441728024219764',         
     date: '📅',
     queue: '📋',
 };
@@ -109,8 +109,8 @@ function createRaidEmbed(event) {
                 inline: true
             },
             {
-                name: `<:emoji:${EMOJIS.leacher}> Leacher (${event.roles.leacher.users.length}/${ROLE_LIMITS.leacher})`,
-                value: formatUsers(event.roles.leacher.users),
+                name: `<:emoji:${EMOJIS.leecher}> Leecher (${event.roles.leecher.users.length}/${ROLE_LIMITS.leecher})`,
+                value: formatUsers(event.roles.leecher.users),
                 inline: true
             },
             {
@@ -160,9 +160,9 @@ function createRoleMenu() {
                 emoji: { id: EMOJIS.dps, name: 'dps' }
             },
             { 
-                label: 'Leacher', 
-                value: 'leacher', 
-                emoji: { id: EMOJIS.leacher, name: 'leacher' }
+                label: 'Leecher', 
+                value: 'leecher', 
+                emoji: { id: EMOJIS.leecher, name: 'leecher' }
             },
             { 
                 label: 'Remove Role', 
@@ -187,7 +187,7 @@ function initializeRaidEvent(title, date, description, host) {
             stillgaze: { name: 'stillgaze', users: [], max: ROLE_LIMITS.stillgaze },
             shadowCaller: { name: 'shadowCaller', users: [], max: ROLE_LIMITS.shadowCaller },
             dps: { name: 'dps', users: [], max: ROLE_LIMITS.dps },
-            leacher: { name: 'leacher', users: [], max: ROLE_LIMITS.leacher },
+            leecher: { name: 'leecher', users: [], max: ROLE_LIMITS.leecher },
             queue: { name: 'queue', users: [], max: Infinity },
         },
         messageId: null,
@@ -268,7 +268,7 @@ client.on('interactionCreate', async (interaction) => {
         const title = interaction.options.getString('title');
         const date = interaction.options.getString('date');
         const description = interaction.options.getString('description') || '';
-        const host = interaction.user.id; // store user ID, not string
+        const host = interaction.user.id;
 
         const event = initializeRaidEvent(title, date, description, `<@${host}>`);
         const embed = createRaidEmbed(event);
@@ -291,8 +291,12 @@ client.on('interactionCreate', async (interaction) => {
 
         const sheetMsg = await thread.send("Loading signup sheet...");
 
+        event.messageId = reply.id;
+        event.channelId = interaction.channel.id;
+        event.threadId = thread.id;
+        raidEvents.set(reply.id, event);
 
-        createSignup(thread.id, sheetMsg.id, host);
+        createSignup(thread.id, sheetMsg.id, host, reply.id);
 
         await updateThreadSheet(thread);
 
@@ -303,29 +307,88 @@ client.on('interactionCreate', async (interaction) => {
         const { getSignup } = require("./signupStore");
         const { updateThreadSheet } = require("./thread");
 
+        const event = raidEvents.get(interaction.message.id);
+        if (!event) return interaction.reply({ content: 'This raid event is no longer active.', flags: 64 });
+
         const thread = interaction.channel.isThread()
             ? interaction.channel
-            : await interaction.channel.threads.fetch(interaction.message.id);
+            : await interaction.channel.threads.fetch(event.threadId);
 
         const data = getSignup(thread.id); 
         if (!data) return interaction.reply({ content: 'This raid event is no longer active.', flags: 64 });
 
         const selectedRole = interaction.values[0];
-        const userId = interaction.user.id;
+        const userId = `<@${interaction.user.id}>`;
 
-        for (const slot in data.slots) {
-            if (slot !== 'raidlead' && data.slots[slot] === userId) {
-                data.slots[slot] = null;
+        if (selectedRole === 'remove') {
+            removeUserFromAllRoles(event, userId);
+            for (const slot in data.slots) {
+                if (slot !== 'raidlead' && data.slots[slot] === interaction.user.id) {
+                    data.slots[slot] = null;
+                }
+            }
+        } else {
+            removeUserFromAllRoles(event, userId);
+            
+            for (const slot in data.slots) {
+                if (slot !== 'raidlead' && data.slots[slot] === interaction.user.id) {
+                    data.slots[slot] = null;
+                }
+            }
+
+            const role = event.roles[selectedRole];
+            if (role) {
+                if (role.users.length >= role.max) {
+                    event.roles.queue.users.push({
+                        id: userId,
+                        queuedRole: selectedRole
+                    });
+                    data.slots.queue = data.slots.queue || [];
+                    if (!data.slots.queue.includes(interaction.user.id)) {
+                        data.slots.queue.push(interaction.user.id);
+                    }
+                } else {
+                    role.users.push({ id: userId });
+                    
+                    // Map role names to signupStore slot names
+                    const roleMapping = {
+                        'offTank': 'debuff',
+                        'healer': 'mainheal',
+                        'blazing': 'blazing',
+                        'stillgaze': 'arcane',
+                        'shadowCaller': 'shadow',
+                        'leecher': 'leach'
+                    };
+                    
+                    if (selectedRole === 'dps') {
+                        // Find first available DPS slot
+                        if (!data.slots.dps1) data.slots.dps1 = interaction.user.id;
+                        else if (!data.slots.dps2) data.slots.dps2 = interaction.user.id;
+                        else if (!data.slots.dps3) data.slots.dps3 = interaction.user.id;
+                    } else if (roleMapping[selectedRole]) {
+                        data.slots[roleMapping[selectedRole]] = interaction.user.id;
+                    }
+                }
             }
         }
 
-        if (selectedRole !== 'remove' && selectedRole !== 'raidlead') {
-            data.slots[selectedRole] = userId;
-        }
+        // Reply immediately to prevent timeout
+        await interaction.reply({ content: 'Your signup has been updated!', flags: 64 });
+
+        // Then do the updates
+        const channel = await interaction.client.channels.fetch(event.channelId);
+        const message = await channel.messages.fetch(event.messageId);
+        
+        const updatedEmbed = createRaidEmbed(event);
+        const selectMenu = createRoleMenu();
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+        
+        await message.edit({
+            embeds: [updatedEmbed],
+            components: [row]
+        });
 
         await updateThreadSheet(thread);
-
-        await interaction.reply({ content: 'Your signup has been updated!', flags: 64 });
     }
 
 });

@@ -1,7 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, REST, Routes } = require('discord.js');
 
-// Initialize Discord Client
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -9,35 +8,39 @@ const client = new Client({
     ],
 });
 
-
-
+// ========== CONFIGURATION ==========
 
 const ROLE_LIMITS = {
-    tank: 1,
+    mainTank: 1,
+    offTank: 1,
     healer: 1,
-    debuff: 1,
-    dps: 4,
-    queue: 3,
+    blazing: 1,
+    stillgaze: 1,
+    shadowCaller: 1,
+    dps: 3,
+    leacher: 1,
 };
-
 
 const EMOJIS = {
-    tank: '🛡️',
-    healer: '💚',
-    debuff: '⚡',
-    dps: '⚔️',
-    queue: '📋',
+    mainTank: '1234567890',      
+    offTank: '1459441602715189583',     
+    healer: '1459441666954891367',       
+    blazing: '1459441447089602787',       
+    stillgaze: '1459441784194203852',       
+    shadowCaller: '1459441501032546304',   
+    dps: '1459441823763271691',            
+    leacher: '1459441728024219764',         
     date: '📅',
+    queue: '📋',
 };
-
 
 const raidEvents = new Map();
 
+// ========== HELPER FUNCTIONS ==========
 
 function generateEventId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
-
 
 function createRaidEmbed(event) {
     const totalSignups = Object.values(event.roles)
@@ -47,8 +50,19 @@ function createRaidEmbed(event) {
     const uniqueSignups = new Set(
         Object.values(event.roles)
             .filter(role => role.name !== 'queue')
-            .flatMap(role => role.users)
+            .flatMap(role => role.users.map(u => u.id))
     ).size;
+
+    // Helper function to format users with role emojis in queue
+    const formatUsers = (users) => {
+        if (!users || users.length === 0) return '-';
+        return users.map(u => {
+            if (u.queuedRole) {
+                return `<:emoji:${EMOJIS[u.queuedRole]}> ${u.id}`;
+            }
+            return u.id || u;
+        }).join('\n');
+    };
 
     return new EmbedBuilder()
         .setTitle(event.title)
@@ -60,28 +74,48 @@ function createRaidEmbed(event) {
         .setColor('#0099ff')
         .addFields(
             {
-                name: `${EMOJIS.tank} Tank (${event.roles.tank.users.length}/${ROLE_LIMITS.tank})`,
-                value: event.roles.tank.users.join('\n') || '-',
+                name: `👑 Raid Leader / Main Tank`,
+                value: formatUsers(event.roles.mainTank.users),
                 inline: true
             },
             {
-                name: `${EMOJIS.healer} Healer (${event.roles.healer.users.length}/${ROLE_LIMITS.healer})`,
-                value: event.roles.healer.users.join('\n') || '-',
+                name: `<:emoji:${EMOJIS.offTank}> Off Tank (${event.roles.offTank.users.length}/${ROLE_LIMITS.offTank})`,
+                value: formatUsers(event.roles.offTank.users),
                 inline: true
             },
             {
-                name: `${EMOJIS.debuff} Debuff (${event.roles.debuff.users.length}/${ROLE_LIMITS.debuff})`,
-                value: event.roles.debuff.users.join('\n') || '-',
+                name: `<:emoji:${EMOJIS.healer}> Healer (${event.roles.healer.users.length}/${ROLE_LIMITS.healer})`,
+                value: formatUsers(event.roles.healer.users),
                 inline: true
             },
             {
-                name: `${EMOJIS.dps} DPS (${event.roles.dps.users.length}/${ROLE_LIMITS.dps})`,
-                value: event.roles.dps.users.join('\n') || '-',
+                name: `<:emoji:${EMOJIS.blazing}> Blazing (${event.roles.blazing.users.length}/${ROLE_LIMITS.blazing})`,
+                value: formatUsers(event.roles.blazing.users),
                 inline: true
             },
             {
-                name: `${EMOJIS.queue} In Queue (${event.roles.queue.users.length}/${ROLE_LIMITS.queue})`,
-                value: event.roles.queue.users.join('\n') || '-',
+                name: `<:emoji:${EMOJIS.stillgaze}> Stillgaze (${event.roles.stillgaze.users.length}/${ROLE_LIMITS.stillgaze})`,
+                value: formatUsers(event.roles.stillgaze.users),
+                inline: true
+            },
+            {
+                name: `<:emoji:${EMOJIS.shadowCaller}> Shadow Caller (${event.roles.shadowCaller.users.length}/${ROLE_LIMITS.shadowCaller})`,
+                value: formatUsers(event.roles.shadowCaller.users),
+                inline: true
+            },
+            {
+                name: `<:emoji:${EMOJIS.dps}> DPS (${event.roles.dps.users.length}/${ROLE_LIMITS.dps})`,
+                value: formatUsers(event.roles.dps.users),
+                inline: true
+            },
+            {
+                name: `<:emoji:${EMOJIS.leacher}> Leacher (${event.roles.leacher.users.length}/${ROLE_LIMITS.leacher})`,
+                value: formatUsers(event.roles.leacher.users),
+                inline: true
+            },
+            {
+                name: `${EMOJIS.queue} In Queue (${event.roles.queue.users.length})`,
+                value: formatUsers(event.roles.queue.users),
                 inline: true
             }
         )
@@ -90,36 +124,45 @@ function createRaidEmbed(event) {
         });
 }
 
-
 function createRoleMenu() {
     return new StringSelectMenuBuilder()
         .setCustomId('role-menu')
         .setPlaceholder('Choose your role')
         .addOptions(
             { 
-                label: 'Tank', 
-                value: 'tank', 
-                emoji: EMOJIS.tank
+                label: 'Off Tank', 
+                value: 'offTank', 
+                emoji: { id: EMOJIS.offTank, name: 'offTank' }
             },
             { 
                 label: 'Healer', 
                 value: 'healer', 
-                emoji: EMOJIS.healer
+                emoji: { id: EMOJIS.healer, name: 'healer' }
             },
             { 
-                label: 'Debuff', 
-                value: 'debuff', 
-                emoji: EMOJIS.debuff
+                label: 'Blazing', 
+                value: 'blazing', 
+                emoji: { id: EMOJIS.blazing, name: 'blazing' }
+            },
+            { 
+                label: 'Stillgaze', 
+                value: 'stillgaze', 
+                emoji: { id: EMOJIS.stillgaze, name: 'stillgaze' }
+            },
+            { 
+                label: 'Shadow Caller', 
+                value: 'shadowCaller', 
+                emoji: { id: EMOJIS.shadowCaller, name: 'shadowCaller' }
             },
             { 
                 label: 'DPS', 
                 value: 'dps', 
-                emoji: EMOJIS.dps
+                emoji: { id: EMOJIS.dps, name: 'dps' }
             },
             { 
-                label: 'Queue', 
-                value: 'queue', 
-                emoji: EMOJIS.queue
+                label: 'Leacher', 
+                value: 'leacher', 
+                emoji: { id: EMOJIS.leacher, name: 'leacher' }
             },
             { 
                 label: 'Remove Role', 
@@ -129,7 +172,6 @@ function createRoleMenu() {
         );
 }
 
-
 function initializeRaidEvent(title, date, description, host) {
     return {
         id: generateEventId(),
@@ -138,29 +180,36 @@ function initializeRaidEvent(title, date, description, host) {
         description,
         host,
         roles: {
-            tank: { name: 'tank', users: [], max: ROLE_LIMITS.tank },
+            mainTank: { name: 'mainTank', users: [{ id: host }], max: ROLE_LIMITS.mainTank },
+            offTank: { name: 'offTank', users: [], max: ROLE_LIMITS.offTank },
             healer: { name: 'healer', users: [], max: ROLE_LIMITS.healer },
-            debuff: { name: 'debuff', users: [], max: ROLE_LIMITS.debuff },
+            blazing: { name: 'blazing', users: [], max: ROLE_LIMITS.blazing },
+            stillgaze: { name: 'stillgaze', users: [], max: ROLE_LIMITS.stillgaze },
+            shadowCaller: { name: 'shadowCaller', users: [], max: ROLE_LIMITS.shadowCaller },
             dps: { name: 'dps', users: [], max: ROLE_LIMITS.dps },
-            queue: { name: 'queue', users: [], max: ROLE_LIMITS.queue },
+            leacher: { name: 'leacher', users: [], max: ROLE_LIMITS.leacher },
+            queue: { name: 'queue', users: [], max: Infinity },
         },
         messageId: null,
         channelId: null,
     };
 }
 
-
 function removeUserFromAllRoles(event, userId) {
     for (const roleKey in event.roles) {
-        event.roles[roleKey].users = event.roles[roleKey].users.filter(id => id !== userId);
+        event.roles[roleKey].users = event.roles[roleKey].users.filter(u => {
+            const id = u.id || u;
+            return id !== userId;
+        });
     }
 }
 
+// ========== SLASH COMMAND REGISTRATION ==========
 
 const commands = [
     {
         name: 'raid',
-        description: 'Create a raid event with date and time',
+        description: 'Create a raid event with date',
         options: [
             {
                 name: 'title',
@@ -207,24 +256,21 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN || process.e
     }
 })();
 
-
+// ========== BOT EVENTS ==========
 
 client.once('clientReady', () => {
     console.log(`✅ Bot is ready! Logged in as ${client.user.tag}`);
 });
 
-
+// Handle slash commands
 client.on('interactionCreate', async (interaction) => {
-    // Handle /raid command
     if (interaction.isCommand() && interaction.commandName === 'raid') {
         const title = interaction.options.getString('title');
         const date = interaction.options.getString('date');
         const description = interaction.options.getString('description') || '';
         const host = interaction.user.toString();
 
-
         const event = initializeRaidEvent(title, date, description, host);
-
 
         const embed = createRaidEmbed(event);
         const selectMenu = createRoleMenu();
@@ -259,29 +305,25 @@ client.on('interactionCreate', async (interaction) => {
         const userId = `<@${interaction.user.id}>`;
         let responseMessage = '';
 
-
         if (selectedRole === 'remove') {
             removeUserFromAllRoles(event, userId);
             responseMessage = 'You have been removed from all roles.';
         } else {
-
             removeUserFromAllRoles(event, userId);
-
 
             const role = event.roles[selectedRole];
             if (role.users.length >= role.max) {
-                await interaction.reply({ 
-                    content: `The **${selectedRole}** role is already full (${role.max}/${role.max}).`, 
-                    flags: 64 
+                // Auto-queue when role is full
+                event.roles.queue.users.push({
+                    id: userId,
+                    queuedRole: selectedRole
                 });
-                return;
+                responseMessage = `The **${selectedRole}** role is full. You've been added to the queue as **${selectedRole}**.`;
+            } else {
+                role.users.push({ id: userId });
+                responseMessage = `You have been added to the **${selectedRole}** role!`;
             }
-
-
-            role.users.push(userId);
-            responseMessage = `You have been added to the **${selectedRole}** role!`;
         }
-
 
         const updatedEmbed = createRaidEmbed(event);
         const selectMenu = createRoleMenu();
@@ -292,7 +334,6 @@ client.on('interactionCreate', async (interaction) => {
                 embeds: [updatedEmbed], 
                 components: [row] 
             });
-
             await interaction.followUp({ 
                 content: responseMessage, 
                 flags: 64 
@@ -303,6 +344,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// ========== START BOT ==========
 
 client.login(process.env.TOKEN || process.env.DISCORD_TOKEN).catch((error) => {
     console.error('❌ Failed to log in:', error);

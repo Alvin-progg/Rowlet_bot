@@ -268,80 +268,70 @@ client.on('interactionCreate', async (interaction) => {
         const title = interaction.options.getString('title');
         const date = interaction.options.getString('date');
         const description = interaction.options.getString('description') || '';
-        const host = interaction.user.toString();
+        const host = interaction.user.id; // store user ID, not string
 
-        const event = initializeRaidEvent(title, date, description, host);
-
+        const event = initializeRaidEvent(title, date, description, `<@${host}>`);
         const embed = createRaidEmbed(event);
         const selectMenu = createRoleMenu();
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
-        await interaction.reply({ 
+        const reply = await interaction.reply({ 
             embeds: [embed], 
-            components: [row]
+            components: [row],
+            fetchReply: true
         });
-        
-        const reply = await interaction.fetchReply();
 
-        event.messageId = reply.id;
-        event.channelId = interaction.channel.id;
-        raidEvents.set(reply.id, event);
+        const thread = await reply.startThread({
+            name: `Raid: ${title}`,
+            autoArchiveDuration: 1440 
+        });
+ 
+        const { createSignup } = require("./signupStore");
+        const { updateThreadSheet } = require("./thread");
+
+        const sheetMsg = await thread.send("Loading signup sheet...");
+
+
+        createSignup(thread.id, sheetMsg.id, host);
+
+        await updateThreadSheet(thread);
 
         console.log(`Raid event created: ${event.id} by ${interaction.user.tag}`);
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'role-menu') {
-        const event = raidEvents.get(interaction.message.id);
-        
-        if (!event) {
-            await interaction.reply({ 
-                content: 'This raid event is no longer active.', 
-                flags: 64 
-            });
-            return;
-        }
+        const { getSignup } = require("./signupStore");
+        const { updateThreadSheet } = require("./thread");
+
+        const data = getSignup(interaction.message.id); 
+        if (!data) return interaction.reply({ content: 'This raid event is no longer active.', ephemeral: true });
 
         const selectedRole = interaction.values[0];
-        const userId = `<@${interaction.user.id}>`;
-        let responseMessage = '';
+        const userId = interaction.user.id;
 
         if (selectedRole === 'remove') {
-            removeUserFromAllRoles(event, userId);
-            responseMessage = 'You have been removed from all roles.';
-        } else {
-            removeUserFromAllRoles(event, userId);
-
-            const role = event.roles[selectedRole];
-            if (role.users.length >= role.max) {
-                // Auto-queue when role is full
-                event.roles.queue.users.push({
-                    id: userId,
-                    queuedRole: selectedRole
-                });
-                responseMessage = `The **${selectedRole}** role is full. You've been added to the queue as **${selectedRole}**.`;
-            } else {
-                role.users.push({ id: userId });
-                responseMessage = `You have been added to the **${selectedRole}** role!`;
+            for (const slot in data.slots) {
+                if (slot !== 'raidlead' && data.slots[slot] === userId) {
+                    data.slots[slot] = null;
+                }
             }
+        } else {
+
+            for (const slot in data.slots) {
+                if (slot !== 'raidlead' && data.slots[slot] === userId) {
+                    data.slots[slot] = null;
+                }
+            }
+
+            if (selectedRole !== 'raidlead') data.slots[selectedRole] = userId;
         }
 
-        const updatedEmbed = createRaidEmbed(event);
-        const selectMenu = createRoleMenu();
-        const row = new ActionRowBuilder().addComponents(selectMenu);
+        const thread = await interaction.channel.threads.fetch(data.threadId || interaction.channel.id);
+        await updateThreadSheet(thread);
 
-        try {
-            await interaction.update({ 
-                embeds: [updatedEmbed], 
-                components: [row] 
-            });
-            await interaction.followUp({ 
-                content: responseMessage, 
-                flags: 64 
-            });
-        } catch (error) {
-            console.error('Error updating raid embed:', error);
-        }
+        await interaction.reply({ content: 'Your signup has been updated!', ephemeral: true });
     }
+
 });
 
 // ========== START BOT ==========

@@ -34,16 +34,22 @@ function buildSheet(slots) {
 9 🔴 **DPS 3** : ${formatUser(slots.dps3)}
 \`\`\`Ranged Weapons\`\`\`
 
-10 🟢 **Leach** : ${formatUser(slots.damnation)}
+10 🟢 **Leach** : ${formatUser(slots.leach)}
 \`\`\`Ground Loot Bags + Ava Energy\`\`\``;
 }
 
-async function updateThreadSheet(thread) {
-  const data = getSignup(thread.id);
+async function updateThreadSheet(client, threadId) {
+  const { getSignup } = require("./signupStore");
+  const data = getSignup(threadId);
   if (!data) return;
+  const thread = await client.channels.fetch(threadId);
+  if (!thread) return;
 
   const msg = await thread.messages.fetch(data.sheetMessageId);
+  if (!msg) return;
+
   await msg.edit(buildSheet(data.slots));
 }
+
 
 module.exports = { updateThreadSheet };

@@ -2,6 +2,7 @@ const signups = new Map();
 
 function createSignup(threadId, sheetMessageId, leaderId) {
   signups.set(threadId, {
+    threadId, 
     sheetMessageId,
     slots: {
       raidlead: leaderId,
@@ -13,7 +14,7 @@ function createSignup(threadId, sheetMessageId, leaderId) {
       dps1: null,
       dps2: null,
       dps3: null,
-      damnation: null
+      leach: null
     }
   });
 }

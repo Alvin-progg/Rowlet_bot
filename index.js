@@ -303,33 +303,29 @@ client.on('interactionCreate', async (interaction) => {
         const { getSignup } = require("./signupStore");
         const { updateThreadSheet } = require("./thread");
 
-        const data = getSignup(interaction.message.id); 
-        if (!data) return interaction.reply({ content: 'This raid event is no longer active.', ephemeral: true });
+        const thread = interaction.channel.isThread()
+            ? interaction.channel
+            : await interaction.channel.threads.fetch(interaction.message.id);
+
+        const data = getSignup(thread.id); 
+        if (!data) return interaction.reply({ content: 'This raid event is no longer active.', flags: 64 });
 
         const selectedRole = interaction.values[0];
         const userId = interaction.user.id;
 
-        if (selectedRole === 'remove') {
-            for (const slot in data.slots) {
-                if (slot !== 'raidlead' && data.slots[slot] === userId) {
-                    data.slots[slot] = null;
-                }
+        for (const slot in data.slots) {
+            if (slot !== 'raidlead' && data.slots[slot] === userId) {
+                data.slots[slot] = null;
             }
-        } else {
-
-            for (const slot in data.slots) {
-                if (slot !== 'raidlead' && data.slots[slot] === userId) {
-                    data.slots[slot] = null;
-                }
-            }
-
-            if (selectedRole !== 'raidlead') data.slots[selectedRole] = userId;
         }
 
-        const thread = await interaction.channel.threads.fetch(data.threadId || interaction.channel.id);
+        if (selectedRole !== 'remove' && selectedRole !== 'raidlead') {
+            data.slots[selectedRole] = userId;
+        }
+
         await updateThreadSheet(thread);
 
-        await interaction.reply({ content: 'Your signup has been updated!', ephemeral: true });
+        await interaction.reply({ content: 'Your signup has been updated!', flags: 64 });
     }
 
 });

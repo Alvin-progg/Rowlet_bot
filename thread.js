@@ -16,7 +16,7 @@ function buildSheet(slots) {
 3 🟡 **MainHeal** : ${formatUser(slots.mainheal)}
 \`\`\`Boots\`\`\`
 
-4 🟣 **Great Arcane** : ${formatUser(slots.arcane)}
+4 🟣 **Still Gaze** : ${formatUser(slots.arcane)}
 \`\`\`Bags & Capes\`\`\`
 
 5 🔴 **SHADOWCALLER** : ${formatUser(slots.shadow)}
@@ -38,18 +38,14 @@ function buildSheet(slots) {
 \`\`\`Ground Loot Bags + Ava Energy\`\`\``;
 }
 
-async function updateThreadSheet(client, threadId) {
-  const { getSignup } = require("./signupStore");
-  const data = getSignup(threadId);
+async function updateThreadSheet(thread) {
+  const data = getSignup(thread.id);
   if (!data) return;
-  const thread = await client.channels.fetch(threadId);
-  if (!thread) return;
 
   const msg = await thread.messages.fetch(data.sheetMessageId);
   if (!msg) return;
 
   await msg.edit(buildSheet(data.slots));
 }
-
 
 module.exports = { updateThreadSheet };

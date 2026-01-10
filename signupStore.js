@@ -1,11 +1,11 @@
 const signups = new Map();
 
-function createSignup(threadId, sheetMessageId, leaderId) {
+function createSignup(threadId, sheetMessageId, host) {
   signups.set(threadId, {
     threadId, 
     sheetMessageId,
     slots: {
-      raidlead: leaderId,
+      raidlead: host,
       debuff: null,
       mainheal: null,
       arcane: null,

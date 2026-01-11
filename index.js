@@ -204,6 +204,52 @@ function removeUserFromAllRoles(event, userId) {
     }
 }
 
+function processQueue(event, data) {
+    // Check each role to see if there's space and someone in queue for that role
+    for (const roleKey in event.roles) {
+        if (roleKey === 'queue') continue;
+        
+        const role = event.roles[roleKey];
+        while (role.users.length < role.max && event.roles.queue.users.length > 0) {
+            // Find first person in queue waiting for this role
+            const queueIndex = event.roles.queue.users.findIndex(q => q.queuedRole === roleKey);
+            if (queueIndex === -1) break;
+            
+            // Remove from queue
+            const queuedUser = event.roles.queue.users.splice(queueIndex, 1)[0];
+            
+            // Add to role
+            role.users.push({ id: queuedUser.id });
+            
+            // Update signupStore
+            const roleMapping = {
+                'offTank': 'debuff',
+                'healer': 'mainheal',
+                'blazing': 'blazing',
+                'stillgaze': 'arcane',
+                'shadowCaller': 'shadow',
+                'leecher': 'leach'
+            };
+            
+            // Extract user ID from mention format
+            const rawUserId = queuedUser.id.replace(/<@|>/g, '');
+            
+            if (roleKey === 'dps') {
+                if (!data.slots.dps1) data.slots.dps1 = rawUserId;
+                else if (!data.slots.dps2) data.slots.dps2 = rawUserId;
+                else if (!data.slots.dps3) data.slots.dps3 = rawUserId;
+            } else if (roleMapping[roleKey]) {
+                data.slots[roleMapping[roleKey]] = rawUserId;
+            }
+            
+            // Remove from queue in data
+            if (data.slots.queue) {
+                data.slots.queue = data.slots.queue.filter(id => id !== rawUserId);
+            }
+        }
+    }
+}
+
 // ========== SLASH COMMAND REGISTRATION ==========
 
 const commands = [
@@ -327,6 +373,8 @@ client.on('interactionCreate', async (interaction) => {
                     data.slots[slot] = null;
                 }
             }
+            // Process queue after removal
+            processQueue(event, data);
         } else {
             removeUserFromAllRoles(event, userId);
             
@@ -335,6 +383,9 @@ client.on('interactionCreate', async (interaction) => {
                     data.slots[slot] = null;
                 }
             }
+            
+            // Process queue to fill any slots that were freed
+            processQueue(event, data);
 
             const role = event.roles[selectedRole];
             if (role) {
